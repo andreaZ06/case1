@@ -46,9 +46,13 @@ yarn-error.log*
 next-env.d.ts
 
 data*
+!review-pitfall-checker/data/
+!review-pitfall-checker/data/**
 *debug*
 
 *.db
+__pycache__/
+*.py[cod]
 
 .open-next
 wrangler.toml
