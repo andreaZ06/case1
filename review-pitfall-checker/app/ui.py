@@ -499,7 +499,7 @@ def render_index_page() -> str:
   <main class="shell">
     <div class="layout">
       <section class="hero" id="analysis">
-        <h1>买前先看坑。</h1>
+        <h1>HELLO</h1>
         <p>粘贴商品负评、使用场景或商品链接备注，FITorNOT 会把杂乱评论整理成清晰的购买风险、致命问题和适配结论。</p>
 
         <section class="analysis-card">

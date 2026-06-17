@@ -14,7 +14,7 @@ class UiPageTest(unittest.TestCase):
         html = render_index_page()
 
         self.assertIn("FITorNOT", html)
-        self.assertIn("买前先看坑", html)
+        self.assertIn("HELLO", html)
         self.assertIn("立即分析", html)
         self.assertIn("最近查询", html)
         self.assertIn('id="product-id"', html)
