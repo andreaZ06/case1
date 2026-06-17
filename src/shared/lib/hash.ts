@@ -38,8 +38,14 @@ export function md5(input: string | ArrayBuffer | Uint8Array): string {
   const rotl = (x: number, n: number) => (x << n) | (x >>> (32 - n));
   const add = (x: number, y: number) => (x + y) >>> 0;
 
-  const cmn = (q: number, x: number, y: number, s: number, t: number) =>
-    add(rotl(add(add(x, q), add(y, t)), s), y);
+  const cmn = (
+    q: number,
+    a0: number,
+    b0: number,
+    x: number,
+    s: number,
+    t: number
+  ) => add(rotl(add(add(a0, q), add(x, t)), s), b0);
   const ff = (
     a0: number,
     b0: number,
@@ -48,7 +54,7 @@ export function md5(input: string | ArrayBuffer | Uint8Array): string {
     x: number,
     s: number,
     t: number
-  ) => cmn((b0 & c0) | (~b0 & d0), a0, b0, s, t + x);
+  ) => cmn((b0 & c0) | (~b0 & d0), a0, b0, x, s, t);
   const gg = (
     a0: number,
     b0: number,
@@ -57,7 +63,7 @@ export function md5(input: string | ArrayBuffer | Uint8Array): string {
     x: number,
     s: number,
     t: number
-  ) => cmn((b0 & d0) | (c0 & ~d0), a0, b0, s, t + x);
+  ) => cmn((b0 & d0) | (c0 & ~d0), a0, b0, x, s, t);
   const hh = (
     a0: number,
     b0: number,
@@ -66,7 +72,7 @@ export function md5(input: string | ArrayBuffer | Uint8Array): string {
     x: number,
     s: number,
     t: number
-  ) => cmn(b0 ^ c0 ^ d0, a0, b0, s, t + x);
+  ) => cmn(b0 ^ c0 ^ d0, a0, b0, x, s, t);
   const ii = (
     a0: number,
     b0: number,
@@ -75,7 +81,7 @@ export function md5(input: string | ArrayBuffer | Uint8Array): string {
     x: number,
     s: number,
     t: number
-  ) => cmn(c0 ^ (b0 | ~d0), a0, b0, s, t + x);
+  ) => cmn(c0 ^ (b0 | ~d0), a0, b0, x, s, t);
 
   for (let i = 0; i < words.length; i += 16) {
     const oa = a;
