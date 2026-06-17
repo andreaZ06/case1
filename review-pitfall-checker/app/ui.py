@@ -427,20 +427,82 @@ def render_index_page() -> str:
       border: 1px dashed var(--line);
     }
 
-    pre {
-      max-height: 260px;
-      margin: 18px 0 0;
-      overflow: auto;
-      border-radius: 18px;
-      padding: 16px;
-      color: #eaf3e6;
-      background: #101810;
-      font-size: 12px;
-      line-height: 1.55;
-      white-space: pre-wrap;
+    .output-cards {
+      display: grid;
+      gap: 12px;
+      margin-top: 18px;
     }
 
-    pre.error { color: var(--danger-soft); }
+    .output-card {
+      border: 1px solid rgb(85 98 77 / 0.12);
+      border-radius: 18px;
+      padding: 16px;
+      background: rgb(255 255 255 / 0.74);
+    }
+
+    .output-card.error {
+      border-color: #ecc8c0;
+      background: #fff5f2;
+    }
+
+    .output-card h3 {
+      margin: 0 0 10px;
+      color: var(--primary);
+      font-size: 14px;
+      letter-spacing: 0.04em;
+    }
+
+    .output-card p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.7;
+      word-break: break-word;
+    }
+
+    .output-list {
+      display: grid;
+      gap: 8px;
+      margin: 0;
+      padding: 0;
+      list-style: none;
+    }
+
+    .output-list li {
+      border-radius: 14px;
+      padding: 10px 12px;
+      color: var(--muted);
+      background: var(--surface-low);
+      font-size: 14px;
+      line-height: 1.6;
+    }
+
+    .output-kv {
+      display: grid;
+      gap: 8px;
+    }
+
+    .output-kv div {
+      display: grid;
+      grid-template-columns: minmax(86px, 0.34fr) minmax(0, 1fr);
+      gap: 10px;
+      border-radius: 14px;
+      padding: 10px 12px;
+      background: var(--surface-low);
+      font-size: 14px;
+      line-height: 1.6;
+    }
+
+    .output-kv dt {
+      color: var(--primary);
+      font-weight: 850;
+    }
+
+    .output-kv dd {
+      margin: 0;
+      color: var(--muted);
+      word-break: break-word;
+    }
 
     .fab {
       position: fixed;
@@ -554,7 +616,9 @@ def render_index_page() -> str:
               <div class="risk-list" id="fatal-risks">
                 <div class="empty-state">分析完成后，这里会列出最需要避开的 fatal_risks。</div>
               </div>
-              <pre id="raw-json">{}</pre>
+              <div class="output-cards" id="output-cards">
+                <div class="empty-state">分析完成后，这里会按字段生成一张张结果卡片。</div>
+              </div>
             </div>
           </div>
         </section>
@@ -598,7 +662,185 @@ def render_index_page() -> str:
     const statusNode = document.getElementById("result-status");
     const recommendationNode = document.getElementById("recommendation");
     const fatalRisksNode = document.getElementById("fatal-risks");
-    const rawJsonNode = document.getElementById("raw-json");
+    const outputCardsNode = document.getElementById("output-cards");
+
+    const labelMap = {
+      final_conclusion: "最终结论",
+      recommendation: "购买建议",
+      fit_or_not: "适配判断",
+      fatal_risks: "致命风险",
+      risk_level: "风险等级",
+      impact_on_user: "对你的影响",
+      user_scenario: "使用场景",
+      product_id: "商品信息"
+    };
+
+    function formatLabel(key) {
+      return labelMap[key] || String(key).replaceAll("_", " ");
+    }
+
+    function isPlainObject(value) {
+      return value !== null && typeof value === "object" && !Array.isArray(value);
+    }
+
+    function stripThinkText(text) {
+      let cleaned = String(text).replace(/<think>[\\s\\S]*?<\\/think>/gi, "").trim();
+      if (cleaned.includes("<think>")) {
+        const starts = ["{", "["]
+          .map((token) => cleaned.indexOf(token))
+          .filter((index) => index >= 0);
+        cleaned = starts.length > 0
+          ? cleaned.slice(Math.min(...starts)).trim()
+          : cleaned.replace(/<think>[\\s\\S]*/i, "").trim();
+      }
+      return cleaned.replace(/```json|```/gi, "").trim();
+    }
+
+    function parseMaybeJson(value) {
+      if (typeof value !== "string") {
+        return value;
+      }
+
+      const cleaned = stripThinkText(value);
+      const candidates = [cleaned];
+      const objectStart = cleaned.indexOf("{");
+      const objectEnd = cleaned.lastIndexOf("}");
+      if (objectStart >= 0 && objectEnd > objectStart) {
+        candidates.push(cleaned.slice(objectStart, objectEnd + 1));
+      }
+      const arrayStart = cleaned.indexOf("[");
+      const arrayEnd = cleaned.lastIndexOf("]");
+      if (arrayStart >= 0 && arrayEnd > arrayStart) {
+        candidates.push(cleaned.slice(arrayStart, arrayEnd + 1));
+      }
+
+      for (const candidate of candidates) {
+        try {
+          return JSON.parse(candidate);
+        } catch (error) {
+          // 继续尝试下一个候选片段。
+        }
+      }
+
+      return cleaned;
+    }
+
+    function normalizeOutputs(data) {
+      const parsed = {};
+      for (const [key, value] of Object.entries(data || {})) {
+        parsed[key] = parseMaybeJson(value);
+      }
+
+      if (Object.keys(parsed).length === 1) {
+        const onlyValue = Object.values(parsed)[0];
+        if (isPlainObject(onlyValue)) {
+          return onlyValue;
+        }
+      }
+
+      if (isPlainObject(parsed.final_conclusion)) {
+        const { final_conclusion: finalConclusion, ...rest } = parsed;
+        return { ...finalConclusion, ...rest };
+      }
+
+      return parsed;
+    }
+
+    function summarizeValue(value) {
+      if (value === null || value === undefined || value === "") {
+        return "无";
+      }
+      if (Array.isArray(value)) {
+        return value.map(summarizeValue).join("；");
+      }
+      if (isPlainObject(value)) {
+        return Object.entries(value)
+          .map(([key, nestedValue]) => `${formatLabel(key)}：${summarizeValue(nestedValue)}`)
+          .join("；");
+      }
+      return String(value);
+    }
+
+    function appendValue(parent, value) {
+      if (Array.isArray(value)) {
+        const list = document.createElement("ul");
+        list.className = "output-list";
+        for (const item of value) {
+          const li = document.createElement("li");
+          if (isPlainObject(item)) {
+            appendValue(li, item);
+          } else {
+            li.textContent = summarizeValue(item);
+          }
+          list.appendChild(li);
+        }
+        parent.appendChild(list);
+        return;
+      }
+
+      if (isPlainObject(value)) {
+        const list = document.createElement("dl");
+        list.className = "output-kv";
+        for (const [key, nestedValue] of Object.entries(value)) {
+          const row = document.createElement("div");
+          const term = document.createElement("dt");
+          const desc = document.createElement("dd");
+          term.textContent = formatLabel(key);
+          appendValue(desc, nestedValue);
+          row.append(term, desc);
+          list.appendChild(row);
+        }
+        parent.appendChild(list);
+        return;
+      }
+
+      const text = document.createElement("p");
+      text.textContent = summarizeValue(value);
+      parent.appendChild(text);
+    }
+
+    function appendOutputCard(title, value, options = {}) {
+      const card = document.createElement("article");
+      card.className = options.error ? "output-card error" : "output-card";
+      const heading = document.createElement("h3");
+      heading.textContent = title;
+      card.appendChild(heading);
+      appendValue(card, value);
+      outputCardsNode.appendChild(card);
+    }
+
+    function renderOutputCards(data, options = {}) {
+      outputCardsNode.innerHTML = "";
+      const displayData = options.error ? data : normalizeOutputs(data);
+      if (!isPlainObject(displayData) || Object.keys(displayData).length === 0) {
+        outputCardsNode.innerHTML = '<div class="empty-state">暂无可展示的结构化结果。</div>';
+        return displayData;
+      }
+
+      const preferredKeys = [
+        "final_conclusion",
+        "避坑结论",
+        "recommendation",
+        "fit_or_not",
+        "fatal_risks",
+        "致命风险",
+        "impact_on_user",
+        "risk_level",
+        "需要权衡的点",
+        "与你无关_可忽略",
+        "备注"
+      ];
+      const keys = [
+        ...preferredKeys.filter((key) => Object.prototype.hasOwnProperty.call(displayData, key)),
+        ...Object.keys(displayData).filter((key) => !preferredKeys.includes(key))
+      ];
+
+      for (const key of keys) {
+        appendOutputCard(formatLabel(key), displayData[key], options);
+      }
+
+      return displayData;
+    }
 
     function renderRisks(risks) {
       fatalRisksNode.innerHTML = "";
@@ -612,17 +854,25 @@ def render_index_page() -> str:
         item.className = "risk-item";
         item.textContent = typeof risk === "string"
           ? risk
-          : (risk.title || risk.name || risk.reason || JSON.stringify(risk));
+          : (risk.title || risk.name || risk.reason || summarizeValue(risk));
         fatalRisksNode.appendChild(item);
       }
+    }
+
+    function pickFirst(data, keys, fallback = "") {
+      for (const key of keys) {
+        if (data && data[key] !== undefined && data[key] !== null && data[key] !== "") {
+          return data[key];
+        }
+      }
+      return fallback;
     }
 
     function resetResult(clearInput = false) {
       statusNode.textContent = "等待输入";
       recommendationNode.textContent = "--";
       fatalRisksNode.innerHTML = '<div class="empty-state">分析完成后，这里会列出最需要避开的 fatal_risks。</div>';
-      rawJsonNode.textContent = "{}";
-      rawJsonNode.classList.remove("error");
+      outputCardsNode.innerHTML = '<div class="empty-state">分析完成后，这里会按字段生成一张张结果卡片。</div>';
       if (clearInput) {
         document.getElementById("product-id").value = "";
         document.getElementById("user-scenario").value = "";
@@ -641,7 +891,7 @@ def render_index_page() -> str:
       event.preventDefault();
       submitButton.disabled = true;
       statusNode.textContent = "分析中";
-      rawJsonNode.classList.remove("error");
+      outputCardsNode.innerHTML = '<div class="empty-state">正在整理分析结果...</div>';
 
       const payload = {
         product_id: document.getElementById("product-id").value.trim(),
@@ -661,16 +911,17 @@ def render_index_page() -> str:
           throw data;
         }
 
+        const displayData = renderOutputCards(data);
         statusNode.textContent = "分析完成";
-        recommendationNode.textContent = data.recommendation || data.fit_or_not || "已返回";
-        renderRisks(data.fatal_risks);
-        rawJsonNode.textContent = JSON.stringify(data, null, 2);
+        recommendationNode.textContent = summarizeValue(
+          pickFirst(displayData, ["recommendation", "fit_or_not", "避坑结论", "final_conclusion"], "已返回")
+        );
+        renderRisks(pickFirst(displayData, ["fatal_risks", "致命风险"], []));
       } catch (error) {
         statusNode.textContent = "分析失败";
         recommendationNode.textContent = "ERROR";
-        fatalRisksNode.innerHTML = '<div class="empty-state">Dify 或本地接口返回错误，请查看原始信息。</div>';
-        rawJsonNode.classList.add("error");
-        rawJsonNode.textContent = JSON.stringify(error, null, 2);
+        fatalRisksNode.innerHTML = '<div class="empty-state">Dify 或本地接口返回错误，请查看错误卡片。</div>';
+        renderOutputCards({ error }, { error: true });
       } finally {
         submitButton.disabled = false;
       }
